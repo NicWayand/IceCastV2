@@ -1,0 +1,270 @@
+---
+title: "Contour-Shifting with the **IceCast** Package"
+author: Hannah M. Director, Adrian E. Raftery, & Cecilia M. Bitz
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteIndexEntry{Demo of Contour-Shifting}
+  %\VignetteEncoding{UTF-8}
+---
+
+##Abstract
+This vignette illustrates how to apply contour-shifting to bias correct predictions with the **IceCast** R package. We will demonstrate how the functions in this package can be used to build statistical models for and correct the bias in dynamical sea ice forecasts. Many users will only need to use one function from this package: `quickRun`. This function takes in NetCDF files of observations and predictions and produces a netCDF file with bias-corrected predictions. This approach is outlined in the first section of the vignette. The remainder of the vignette focuses on how contour-shifting is executed and how the correction is determined. Users should be aware contour-shifting and this software will only work well when there are a sufficient number of years of predictions and observations to build a model. We recommend a minimum of twenty years. 
+In the vignette, we will illustrate contour shifting using the example of correcting the bias in the February 2012 model prediction at a 4-month lead time using retrospective predictions and observations from 1981-2011. We will use the model output from the CM2.5 Forecast-oriented Low-Ocean Resolution (FLOR) model produced by the National Oceanic and Atmospheric Administration’s Geophysical Fluid Dynamics Laboratory (Vecchi et al. 2014; Msadek et al. 2014). We have converted the data to a Polar stereographic grid. We will also use observations of the monthly sea ice concentration obtained from the National Aeronautics and Space Administration (NASA) satellites Nimbus-7 SMMR and DMSP SSM/I-SSMIS  and processed by the bootstrap algorithm. The data are distributed by the National Snow and Ice Data Center (NSIDC) (Comiso 2000, updated 2015). We have simplified the land mask of the observations to match the resolution from the model output.
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE) 
+```
+
+
+We will first load the **IceCast** package. We will also load the **fields** package (Nychka et al. 2016). While the **fields** package is not needed to use the functions in the *IceCast* package, it provides useful functions for generating spatial figures, which we will do in this vignette.
+```{r libraries, message = FALSE, warning = FALSE}
+library("IceCast")
+library("fields")
+```
+
+## quickRun Function
+We will first explain `quickRun` function, which executes the full process of contour-shifting. It takes in two NetCDF files that contain the observed and predicted sea ice concentrations and outputs a NetCDF file that contains the bias-corrected sea ice concentration predictions. Users need to specify the file paths for the NetCDF file to be read in and where the new NetCDF file should be written. They also need to specify what month and year(s) they want to correct.
+
+Prediction and observation data should be formatted as a NetCDF file with a single array with 4 dimensions (years x months x lon x lat). In the prediction array, each entry should have a value between 0 and 1 that indicates the sea ice concentration proportion or a value of NA that indicates land. The variable should be named `iceInd`. The observation array defaults to having values that correspond to conventions of the NASA Bootstrap data where values betweeen 0 and 100 indicate the sea ice concentration percentage, values of 110 indicate the grid box is within the satellite hole, and values of 120 indicate the grid box is on land. The variable should be named `conc`. Alternatively, the observation values can be formatted the same as the prediction values.  That is, each entry will have a value between 0 and 1 that indicates the sea ice concentration proportion or a value of NA that indicates land. For this case, select, `datTypObs = "simple` and name the variable `iceInd`.
+
+Below is an example of what a call to the `quickRun` function look likes. During its execution, a message will be printed as each year is mapped and each year is bias-corrected. You should expect about 1 minute of run-time for each year mapped and an additional 1 minute of run-time for each year bias corrected. The resulting NetCDF file of the bias-corrected prediction will be saved to the specified file at the functions' completion. Note that the polygons created by contour-shfiting are not constrained to exactly align with the grid. So, for exporting to a NetCDF file, each grid box is categorized as containing sea ice only if its center is covered by sea ice. 
+
+```{r quickstart approach, eval = FALSE}
+##Not run##
+quickRun(obsNCDF = "/obs.nc", predNCDF = "/pred.nc", predYears = c(2001:2013), 
+         startYear = 1980, month = 2, outputFile = "/outputFile.nc", level = 15,
+         datTypeObs = "bootstrap")
+```
+
+##Loading Data and Built-In Regions
+
+###Loading Observation Data
+We will now look at tools for data processing. The package has functions to easily read in binary observation data downloaded from NSIDC.  To keep the package to a reasonable size, we have not uploaded binary files.  To use these functions, the binary files must be named using the original file names used by NSIDC (i.e. bt_198301_n07_v02_n.bin). For example, we could load the raw binary files as follows
+```{r bootstrap read-in, eval = FALSE}
+##Not run##
+rawData <- readBootstrap("bt_198301_n07_v02_n.bin")
+```
+This gives a vector of numbers with which encode information related to the concentration and land mask. We can convert this to a useful matrix using the `readMonthlyBS` function. To bias correct the February 2012 model output, we  need to read in the observations from 1981-2012. This can be done with the `readMonthlyBS` commnand as follows 
+```{r how obs data obtained, eval = FALSE}
+##Not run##
+observed <- readMonthlyBS(startYear = 1981,endYear = 2012, 
+                         fileFolder = "myFilePath/")
+obsFeb <- observed[, 2, , ] #Use February data only 
+```
+where the folder "myFilePath/" is a path to a folder with all the NSIDC binary files. However, to keep the *IceCast* package to a reasonable size, we have not uploaded the binary files. Instead, the package includes some sample results from this function stored as the `obsFeb19811982` array. This array, of dimension 2 x 12 x 304 x 448, gives the observed concentration fields for the years 1981-1982 for all twelve months. 
+
+Let's look at the field for February 1982:
+```{r plot feb 2012 obs, fig.height = 5, fig.width = 5, fig.align = "center"}
+image.plot(obsFeb19811982[length(1981:1982),,], 
+           main = "Observed Sea Ice Concentration \n February 1982", 
+           xaxt = "n", yaxt = "n")
+```
+
+###Predictions
+For making comparisons with observations, we need to specify an array of concentration values with dimensions year x month x longitude x latitude. The package doesn't include built-in functions for loading predictions, since there are a wide range of dynamical models for sea ice on several different grids. For demonstration purposes, the *IceCast* package includes one set of ensemble mean prediction data, stored as the object `emFeb19811982`. This array has the ensemble mean predictions initalized in November from the CM2.5-Forecast Oriented Low-Ocean Resolution model discussed in the introduction.
+
+As an example, let's look at the prediction for February 1981 at a 4-month lead time.
+```{r plot Nov 2012 pred, fig.height = 5, fig.width = 5, fig.align = "center"}
+image.plot(emFeb19811982[length(1980:1981),,], 
+           main = "Predicted Sea Ice Concentration \n February 1981 (4-month lead time)",
+           xaxt = "n", yaxt = "n")
+```
+
+
+###Regions
+We have several functions built into the package to convert gridded data to polygon objects. To do this, we need to specify what type of data we have and what types of polygons we are aiming to build. This function can be used with bootstrap observation data or with prediction data from the CM2.5 Forecast-oriented Low-Ocean Resolution (FLOR) model. For example, we will often want to have polygons corresponding to where there is land. We can obtain such as polygon as follows:
+
+```{r get land, fig.height = 5, fig.width = 5, fig.align = "center"}
+land <- getRegion(dat = emFeb19811982[2, ,], datType = "gfdl", landInd = TRUE)
+plot(land, col = "grey", main = "Land")
+```
+ 
+This polygon is stored in the package with the name `land`. The package also has several other built-in polygons. First, we have a polygon that gives all the combined regions that form the seas of the Arctic as defined by NSIDC. This polygon is named `allRegions.` We also have the polygon, `bgWater`, which gives all the regions on the polar stereographic grid that are not considered to be part of the seas of the Arctic. All the polygons are loaded automatically when the package is loaded. More details about these polygons can be found in their 'help' pages. We'll plot the regions now to visualize. 
+
+```{r plot misc polygons, fig.height = 5, fig.width = 5, fig.align = "center"}
+plot(land, col = "grey", main = "Seas of the Arctic")
+plot(bgWater, col = "black", add = T)
+plot(allRegions, col = "blue", add = T)
+legend("bottom", fill = c("blue", "black"), cex = 0.75,
+       legend = c("Regions", "Outside Regions"))
+```
+
+
+##Mapping ice sections
+###Built-in objects
+For mapping the ice sections, we have some built-in regions and lines that are stored in the `regionInfo` object. This object is a list with six items: `regions`, `lines`, `out`, `centRegion`, `centLines`, and `centFrom`. The first three objects are ordered lists giving information about each of the regions that will be mapped outside the Central Arctic region. The object `regions` gives the SpatialPolygons objects for the corresponding regions and  the object `lines` gives the SpatialLines objects for the corresponding fixed lines. The object `out` gives SpatialPolygons that are outside the corresponding regions, but that border the fixed lines. These are used when building new polygons to determine if points are being mapped outside the region of interest. The object `centRegions` is the SpatialPolygons object corresponding to the central Arctic region, the object `centLines` is the SpatialLines object for the fixed line, and the object `centFrom` is an n x 2 matrix with each row repeatedly giving the coordinates of the center point from which mapping vectors will emanate
+
+We can use the `regionInfo` object to plot the regions and their fixed lines.
+
+```{r plot regions, fig.height = 5, fig.width = 5, fig.align = "center"}
+colors <- c("darkblue", "green", "blue", "red", "orange", "yellow", 
+            "purple", "pink", "lightgreen", "brown", "tan", "darkgreen", 
+            "hotpink", "navy", "beige")
+plot(land, col = "grey", main = "Mapping Lines & Regions")
+for (i in 1:length(regionInfo$regions)) {
+  plot(regionInfo$regions[[i]], add = T, lwd = 1.5)
+}
+for (i in 1:length(regionInfo$lines)) {
+  plot(regionInfo$lines[[i]], col = colors[i], add = T, lwd = 2)
+}
+```
+
+Similarily, we can use the `regionInfo` object to plot the regions and the lines that will intersect with the ice in the central Arctic region. 
+```{r plot central Arctic, fig.height = 5, fig.width = 5, fig.align = "center"}
+#Find angle of mapping line (and color code)
+nLines <- length(regionInfo$centLines)
+ang <- rep(NA, nLines)
+for (i in 1:nLines) {
+  temp <- regionInfo$centLines[[i]]@lines[[1]]@Lines[[1]]@coords
+  nTemp <- nrow(temp)
+  ang[i] <- atan2(temp[nTemp, 2] - temp[1, 2], temp[nTemp, 1] - temp[1, 1])
+} 
+bp <- seq(-pi, pi, length.out = 65)
+angCol <- tim.colors(64)[as.numeric(cut(ang, breaks = bp))]
+
+#plot region and lines 
+plot(regionInfo$centRegion, main = "Central Arctic Boundary Lines ")
+plot(land, add = T, col = "grey")
+for (s in 1:length(regionInfo$centLines)) {
+  if (s%%3 == 0) {
+    plot(regionInfo$centLines[[s]], col = angCol[s], add = T)
+  }
+}
+
+#Add legend
+x <- y <- seq(-1, 1, .01)
+grid <- expand.grid(x, y)
+angle <- apply(grid, 1, function(x){atan2(x[2], x[1])})
+legVals <- matrix(nrow = length(x), length(y), data = angle)
+add.image(-2100, 2000, legVals, image.width = .1, image.height = .1)
+```
+
+You could also use your own regions rather than the built-in regions. To do so, you would need to define a region information list for your regions.
+
+###Learn Mappings
+With any prediction or observation, we can build a mapping. We will use the `obsFeb19811982` and `emFeb19811982` arrays to demonstrate this, which are arrays with the observed and ensemble mean data for 1981-1982. For a single forecast month in a particular year, we can map the region as follows
+
+```{r, mapAnch example, fig.align = "center", fig.height = 7, fig.width = 7, fig.align = "center"}
+obs <- getRegion(dat = obsFeb19811982[length(1981:1982), ,], datType = "bootstrap", level = 15)
+obsMap <- getMap(ice = obs, plotting = TRUE, main = "Observed Mapping \n February 1982")
+```
+
+To map and store results for a period of years, we use the `createMapping` function. We will run this for a single year, with plotting turned on, as a demo. 
+```{r, createMapping Feb example, fig.align = "center", fig.width = 8, fig.height = 8}
+par(mfrow = c(2, 2), oma = rep(0, 4), mar = c(1, 1, 2, 1))
+discrepDemo1 <- createMapping(startYear = 1981, endYear = 1981, 
+                              obsStartYear = 1981, predStartYear = 1980,
+                              observed = obsFeb19811982, predicted = emFeb19811982, 
+                              regions = regionInfo,  month = 2, level = 15, 
+                              datTypeObs = "bootstrap", datTypePred = "gfdl", plotting = TRUE)
+```
+
+The `createMapping` function returns a list of five objects. The objects `month`,  `startYear` and `endYear` give the month, first year, and last year that were mapped. The objects `obsList` and `predList` are lists of arrays with one 3-dimensional array for each region. The first dimension is for the year. The other two dimensions form a matrix where each row corresponds to a point in the region's fixed line. The seven columns give the fixed points' x-coordinates, the fixed points' y-coordinates, the mapped points' x-coordinates, the mapped points' y-coordinates, the length of the mapping vectors in the x-direction, the length of the mapping vectors in the y-direction, and the angle of the mapping vectors. Looking at the first few lines of the first region gives us an example of this. 
+
+```{r look at a mapped list, fig.height = 4, fig.width = 4}
+head(discrepDemo1$predList[[1]][1,,])
+```
+
+
+```{r remove discrep demo, include = FALSE}
+rm(discrepDemo1)
+```
+
+To bias correct February 2012, we will need the mappings for all the prior years (1981-2011). We could obtain them with something like the following command where `observed` and `ensemMean` are arrays with the observed and ensemble mean data for all years up to 2011.
+
+```{r finding all maps, eval = FALSE}
+##Not run##
+discrep <- createMapping(startYear = 1981, endYear = 2011, 
+                         obsStartYear = 1981, predStartYear = 1980,
+                         observed = observed[,month,,],predicted = ensemMean[,month,,],
+                         regions = regionInfo, month = month, level = 15,
+                         datTypeObs = "bootstrap", datTypePred = "gfdl")
+````
+ However, since this command takes a bit of time to run, we've pre-loaded the results in the package as the object `discrep`.
+
+##Applying the bias correction
+With the mappings for previous years completed, we're now ready to bias correct the dynamical model prediction for February 2012. We can do this with just one line:
+
+```{r bias correct month} 
+adj <- contourShift(maps = discrep, predicted = emFeb2012, bcYear = 2012, 
+                    predStartYear = 2012, regions = regionInfo,  
+                    level = 15, datTypePred = "gfdl")
+```
+The adjusted prediction, `adj`, is a `SpatialPolygons` object that gives the bias-corrected prediction of where we expect to see sea ice. 
+
+We can compare this polygon to the corresponding observation and unadjusted prediction. First we'll convert the corresponding observation and prediction into polygons.
+```{r get obs and raw}
+obs <- getRegion(dat = obsFeb2012, datType = 'bootstrap', level = 15)
+unAdj <- getRegion(dat = emFeb2012, datType = 'gfdl', level = 15)
+````
+
+We can now plot the results
+```{r plot results, fig.align = "center", fig.height = 4.5, fig.width = 4.5}
+plot(land, col = "grey", border = F, 
+     main = "Predicted vs. Bias−Corrected Contours \nFebruary 2012 (4-Month Lead Time)")
+plot(obs, col = "lightblue", add = T, border = F)
+plot(unAdj, border = "red", add = T)
+plot(adj, border = "navy", add = T)
+````
+
+We can see that the bias-corrected contour follows the observed region more closely than the unobserved prediction. We can also quantify by how much we have reduced the error. To do this, we first find the regions that are incorrectly predicted.
+
+```{r find error Areas }
+overEstUnAdj <- gDifference(obs, unAdj)
+underEstUnAdj <- gDifference(unAdj, obs)
+overEstAdj <- gDifference(obs, adj)
+underEstAdj <- gDifference(adj, obs)
+```
+
+We'll plot the overestimated regions in green and the underestimated regions in yellow.
+```{r plot over- and under-estimated regions, fig.align = "center", fig.height = 4, fig.width = 4}
+par(mfrow = c(1, 2), oma = rep(0, 4), mar = rep(0, 4))
+#Unadjusted
+plot(land, col = "grey", border = FALSE, main = "Error Regions:\n Unadjusted")
+plot(obs, col = "lightblue", border = F, add = T)
+plot(overEstUnAdj, col = "green", border = F, add = T)
+plot(underEstUnAdj, col = "yellow", border = F, add = T)
+plot(unAdj, add = T, border = "red")
+
+#bias-corrected
+plot(land, col = "grey", border = FALSE, main = "Error Regions:\n Bias-corrected")
+plot(obs, col = "lightblue", border = F, add = T)
+plot(overEstAdj, col = "green", border = F, add = T)
+plot(underEstAdj, col = "yellow", border = F, add = T)
+plot(adj, add = T, border = "navy")
+````
+
+If we calculate the areas of these regions and sum them up, we can find the total area in error, referred to as the Integrated Ice-Edge Error (IIEE) (Goessling et al. 2016). We can also find the difference between the IIEE for the unadjusted and bias-corrected results. By default, areas are reported in square kilometers, but we'll report the result in to $10^{5}$ $km^{2}$. This gives
+```{r calculate area difference}
+unAdjIIEE <- getArea(overEstUnAdj) + getArea(underEstUnAdj)
+adjIIEE <- getArea(overEstAdj) + getArea(underEstAdj)
+IIEERed <- (unAdjIIEE - adjIIEE)/1e5 #in 10^5 km
+IIEERed
+```
+
+We can also calculate the percent error reduction
+```{r percent error reduction}
+perRed <- 100*(unAdjIIEE - adjIIEE)/unAdjIIEE
+perRed
+```
+This means we've obtained an approximate 42% reduction in the IIEE. This is a bit above average for February at a 4-month lead, which averages 29.7% over the years 2001-2013.
+
+
+##References
+ Comiso, J., 2000, updated 2015: Bootstrap sea ice concentrations from Nimbus-7 SMMR 
+DMSP SSM/I-SSMIS. version 2. http://nsidc.org/data/nsidc-0079
+
+Goessling, H. F., S. Tietsche, J. J. Day, E. Hawkins, and T. Jung, 2016: Predictability of the Arctic
+sea-ice edge. Geophysical Research Letters.
+
+National Center for Atmospheric Research, 2017: Earth system grid at NCAR. https://www.earthsystemgrid.org/home.html.
+
+Nychka, D., Furrer, R., Paige, J., Sain, S., & Nychka, M. D. (2016). Package ‘fields’.
+
+Msadek, R., et al."Importance of initial conditions in seasonal predictions of Arctic sea ice extent."
+Geophysical Research Letters 41.14 (2014): 5208-5215.
+
+Vecchi, Gabriel A., et al. "On the seasonal forecasting of regional tropical cyclone activity." Journal of Climate 27.21 (2014): 7994-8016.
+
