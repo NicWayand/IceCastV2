@@ -72,8 +72,8 @@ convToGrid <- function(x, myLandMat = landMat) {
 #'          datTypeObs = "simple")
 #' }
 #' @export
-quickRun <- function(obsNCDF, predNCDF, predYears, startYear, month, outputFile,
-                  level, datTypeObs = "bootstrap") {
+quickRun <- function(obsNCDF, predNCDF, predYears, startYear, endYearOffset=1, month, outputFile,
+                  level, datTypeObs = "bootstrap", plotting = FALSE) {
   #extract input dimensions
   obs <- nc_open(obsNCDF)
   if (datTypeObs == "bootstrap") {
@@ -94,24 +94,31 @@ quickRun <- function(obsNCDF, predNCDF, predYears, startYear, month, outputFile,
   output <- array(dim = c(nPredYear, 304, 448))
 
   #run mappings for all years
+  print("Starting mapping...")
   discrep <- createMapping(startYear = startYear, endYear = max(predYears) - 1,
                            obsStartYear = obsStartYear, predStartYear = predStartYear,
                            observed = obsMat[,month,,], predicted = predMat[,month,,],
                            regions = regionInfo, month = month, level = level,
                            datTypeObs = datTypeObs, datTypePred = "simple")
-
+  print("Done mapping.")
+  print("Have mappings for years...")
+  print(discrep$startYear)
+  print(discrep$endYear)
+  
+  print("Starting bias correction...")
   #Bias correct predictions
   bgWater <- convToGrid(bgWater)
   for (k in 1:length(predYears)) {
     adj <- contourShift(maps = discrep, predicted = predMat[length(predStartYear:predYears[k]), month,,],
-                        bcYear = predYears[k], predStartYear = predStartYear, regions = regionInfo,
+                        bcYear = predYears[k], predStartYear = predStartYear, endYearOffset = endYearOffset, 
+                        regions = regionInfo,
                         level = level, datTypePred = "simple")
     adj <- convToGrid(adj)
     adj[bgWater == 1] <- 2
     output[k, ,] <- adj
     print(sprintf("Correction of year %i completed", predYears[k]))
   }
-
+  print("Finished bias correction.")
   #define variables
   iceIndDef <- ncvar_def("iceInd", "indicator", list(yearDim, lonDim, latDim),
                        longname = "Indicator of if pixel is ice covered (0: not ice, 1: ice, NA: land, 2: Outside region")

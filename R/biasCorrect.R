@@ -70,7 +70,7 @@
 #' plot(adj, add = TRUE, col = "blue")
 #' }
 contourShift <- function(maps, predicted, bcYear, predStartYear, regions, level, datTypePred, myLandMat = landMat,
-                         myAllRegions = allRegions, myLand = land) {
+                         myAllRegions = allRegions, myLand = land, endYearOffset) {
 
   ##Read-in and format prediction
   raw <- getRegion(dat = predicted, datType = datTypePred, level = level)
@@ -97,27 +97,27 @@ contourShift <- function(maps, predicted, bcYear, predStartYear, regions, level,
   }
 
   ##adjust typical regions
+  yearInd <- maps$startYear:(bcYear - 1)
   end <- list()
   for (j in 1:nReg) {
     line <- regions$lines[[j]]@lines[[1]]@Lines[[1]]@coords
     new <- matrix(nrow = nrow(line), ncol = 2)
     colnames(new) <- c("x", "y")
-    yearInd <- maps$startYear:(bcYear - 1)
     for (s in 1:nrow(line)) {
       #calculate pattern in x-values and bias correct
-      xTempObs <- maps$obsList[[j]][1:(discrepIndex - 1), s, 3]
+      xTempObs <- maps$obsList[[j]][1:(discrepIndex - endYearOffset), s, 3]
       lmXObs <- suppressWarnings(rlm(xTempObs ~ yearInd))
       xObsPred <- predict(lmXObs, newdata = data.frame(yearInd = bcYear))
-      xTempRaw <- maps$predList[[j]][1:(discrepIndex - 1), s, 3]
+      xTempRaw <- maps$predList[[j]][1:(discrepIndex - endYearOffset), s, 3]
       lmXRaw <- suppressWarnings(rlm(xTempRaw ~ yearInd))
       xRawPred <- predict(lmXRaw, newdata = data.frame(yearInd = bcYear))
       new[s, "x"] <- rawMap[[j]][s, "toX"] + (xObsPred - xRawPred)
 
       #calculate pattern in y-values and bias correct
-      yTempObs <- maps$obsList[[j]][1:(discrepIndex - 1), s, 4]
+      yTempObs <- maps$obsList[[j]][1:(discrepIndex - endYearOffset), s, 4]
       lmYObs <- suppressWarnings(rlm(yTempObs ~ yearInd))
       yObsPred <- predict(lmYObs, newdata = data.frame(yearInd = bcYear))
-      yTempRaw <-  maps$predList[[j]][1:(discrepIndex - 1), s, 4]
+      yTempRaw <-  maps$predList[[j]][1:(discrepIndex - endYearOffset), s, 4]
       lmYRaw <- suppressWarnings(rlm(yTempRaw ~ yearInd))
       yRawPred <- predict(lmYRaw, newdata = data.frame(yearInd = bcYear))
       new[s, "y"] <- rawMap[[j]][s, "toY"]  + (yObsPred - yRawPred)
@@ -150,11 +150,11 @@ contourShift <- function(maps, predicted, bcYear, predStartYear, regions, level,
   new <- matrix(ncol = 2, nrow = length(regions$centLines))
   for (s in 1:length(regions$centLines)) {
     #calculate length of lines
-    xTempRaw <- maps$predList[[nReg + 1]][1:(discrepIndex - 1), s, 3]
-    yTempRaw <- maps$predList[[nReg + 1]][1:(discrepIndex - 1), s, 4]
+    xTempRaw <- maps$predList[[nReg + 1]][1:(discrepIndex - endYearOffset), s, 3]
+    yTempRaw <- maps$predList[[nReg + 1]][1:(discrepIndex - endYearOffset), s, 4]
     rawLength <- sqrt(xTempRaw^2 + yTempRaw^2)
-    xTempObs <- maps$obsList[[nReg + 1]][1:(discrepIndex - 1), s, 3]
-    yTempObs <- maps$obsList[[nReg + 1]][1:(discrepIndex - 1), s, 4]
+    xTempObs <- maps$obsList[[nReg + 1]][1:(discrepIndex - endYearOffset), s, 3]
+    yTempObs <- maps$obsList[[nReg + 1]][1:(discrepIndex - endYearOffset), s, 4]
     obsLength <- sqrt(xTempObs^2 + yTempObs^2)
     #use regression to get adjustment
     if (length(unique(rawLength)) > 1) {
