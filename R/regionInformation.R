@@ -6,7 +6,7 @@
 #' Central Arctic region. The variable \code{regions} gives \code{SpatialPolygons} objects for the corresponding regions and the variable \code{lines}
 #'  gives the \code{SpatialLines} objects for the corresponding fixed lines. The variable \code{out} gives \code{SpatialPolygons} objects that are outside the corresponding regions,
 #'  but that border the fixed lines. These are used when building new polygons to determine if points are being mapped outside the region of interest.
-#'  The variable \code{centRegions} is the \code{SpatialPolygons} object corresponding to the central Arctic region, \code{centLines} is the \code{SpatialLines} object for the fixed line,
+#'  The variable \code{centRegions} is the \code{SpatialPolygons} object corresponding to the central Arctic region, \code{centLines} is the \code{SpatialLines} object for the fixed line.
 #'
 #' @keywords datasets
 #'
