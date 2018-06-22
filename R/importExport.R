@@ -74,6 +74,7 @@ convToGrid <- function(x, myLandMat = landMat) {
 #' @export
 quickRun <- function(obsNCDF, predNCDF, predYears, startYear, endYearOffset=1, month, outputFile,
                   level, datTypeObs = "bootstrap", plotting = FALSE) {
+
   #extract input dimensions
   obs <- nc_open(obsNCDF)
   if (datTypeObs == "bootstrap") {
@@ -87,40 +88,47 @@ quickRun <- function(obsNCDF, predNCDF, predYears, startYear, endYearOffset=1, m
   predStartYear <- pred$dim$year$vals[1]
 
   #prepare for output
-  yearDim <- ncdim_def("year", "years", predYears)
+  yearDim <- ncdim_def("year", "years", predYears) # (name, units, vals...)
+  monDim <- ncdim_def("month", "months", month)
   lonDim <- ncdim_def("lon", "longitude", 1:304)
   latDim <- ncdim_def("lat", "latitude", 1:448)
   nPredYear <- length(predYears)
-  output <- array(dim = c(nPredYear, 304, 448))
+  nmonths <- length(month)
+  output <- array(dim = c(nPredYear, 304, 448, nmonths))
 
   #run mappings for all years
   print("Starting mapping...")
-  discrep <- createMapping(startYear = startYear, endYear = max(predYears) - 1,
+  discrep <- createMapping(startYear = startYear, endYear = max(predYears) - endYearOffset,
                            obsStartYear = obsStartYear, predStartYear = predStartYear,
                            observed = obsMat[,month,,], predicted = predMat[,month,,],
                            regions = regionInfo, month = month, level = level,
-                           datTypeObs = datTypeObs, datTypePred = "simple")
+                           datTypeObs = datTypeObs, datTypePred = "simple", plotting = plotting)
   print("Done mapping.")
   print("Have mappings for years...")
   print(discrep$startYear)
   print(discrep$endYear)
   
   print("Starting bias correction...")
+  
   #Bias correct predictions
   bgWater <- convToGrid(bgWater)
   for (k in 1:length(predYears)) {
+    start.time <- Sys.time()
     adj <- contourShift(maps = discrep, predicted = predMat[length(predStartYear:predYears[k]), month,,],
                         bcYear = predYears[k], predStartYear = predStartYear, endYearOffset = endYearOffset, 
                         regions = regionInfo,
                         level = level, datTypePred = "simple")
     adj <- convToGrid(adj)
     adj[bgWater == 1] <- 2
-    output[k, ,] <- adj
-    print(sprintf("Correction of year %i completed", predYears[k]))
+    output[k, , , ] <- adj
+    print(sprintf("Correction of year %i month %i completed", predYears[k], month))
+    end.time <- Sys.time()
+    time.taken <- end.time - start.time
+    print(time.taken)
   }
   print("Finished bias correction.")
   #define variables
-  iceIndDef <- ncvar_def("iceInd", "indicator", list(yearDim, lonDim, latDim),
+  iceIndDef <- ncvar_def("iceInd", "indicator", list(yearDim, lonDim, latDim, monDim),
                        longname = "Indicator of if pixel is ice covered (0: not ice, 1: ice, NA: land, 2: Outside region")
 
   #create netCDF file and arrays

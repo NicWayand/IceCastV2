@@ -81,6 +81,7 @@ contourShift <- function(maps, predicted, bcYear, predStartYear, regions, level,
   rawMap <- getMap(ice = raw)
 
   ##find mapping for central Arctic region
+  print("Getting central Arctic mappings...")
   rawCent <- matrix(ncol = 4, nrow = nrow(regions$centFrom))
   rawCent[, 1:2] <- regions$centFrom
   rawCurr <- rmHoles(keepPoly(gIntersection(raw, regions$centRegion))) #ice in central Arctic region
@@ -95,9 +96,10 @@ contourShift <- function(maps, predicted, bcYear, predStartYear, regions, level,
       rawCent[s, 3:4] <- regions$centFrom[s,]
     }
   }
-
+  
+  print("Adjusting regions...")
   ##adjust typical regions
-  yearInd <- maps$startYear:(bcYear - 1)
+  yearInd <- maps$startYear:(bcYear - endYearOffset)
   end <- list()
   for (j in 1:nReg) {
     line <- regions$lines[[j]]@lines[[1]]@Lines[[1]]@coords
@@ -126,6 +128,7 @@ contourShift <- function(maps, predicted, bcYear, predStartYear, regions, level,
   }
 
   ##make adjusted points for each region into a polygon and combine polygons for all regions
+  print("Converting to polygons...")
   adj <- NULL
   for (j in 1:nReg) {
     new <- makePolygons(myEnd = end[[j]], myFixedLine = regions$lines[[j]],
@@ -140,6 +143,7 @@ contourShift <- function(maps, predicted, bcYear, predStartYear, regions, level,
   }
 
   ##add regions from the raw prediction that don't touch the land at all
+  print("Add back raw predictions not touching land...")
   tempRaw <- disaggregate(keepPoly(gDifference(raw, regions$centRegion)))
   add <- tempRaw[!gIntersects(tempRaw, aggregate(myLand), byid = T)]
   adj <- aggregate(spRbind(adj, add))
@@ -147,6 +151,7 @@ contourShift <- function(maps, predicted, bcYear, predStartYear, regions, level,
   adj@polygons[[1]]@ID <- "adj"
 
   ##adjust Central Arctic region
+  print("Adjusting Central Arctic region...")
   new <- matrix(ncol = 2, nrow = length(regions$centLines))
   for (s in 1:length(regions$centLines)) {
     #calculate length of lines
@@ -180,6 +185,7 @@ contourShift <- function(maps, predicted, bcYear, predStartYear, regions, level,
   }
 
   ##make polygon for central Arctic region
+  print("Making polygon of central arctic...")
   centPoly <- SpatialPolygons(list(Polygons(list(Polygon(new, hole = FALSE)), "centerRegion")))
   if (!is.null(centPoly)) {
     if (!suppressWarnings(gIsValid(centPoly))) {
