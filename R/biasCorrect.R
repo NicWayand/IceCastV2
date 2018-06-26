@@ -70,8 +70,10 @@
 #' plot(adj, add = TRUE, col = "blue")
 #' }
 contourShift <- function(maps, predicted, bcYear, predStartYear, regions, level, datTypePred, myLandMat = landMat,
-                         myAllRegions = allRegions, myLand = land, endYearOffset) {
+                         myAllRegions = allRegions, myLand = land, endYearOffset, modType = modType) {
 
+  
+  
   ##Read-in and format prediction
   raw <- getRegion(dat = predicted, datType = datTypePred, level = level)
   discrepIndex <- bcYear - maps$startYear + 1 #need indices to match dimension of xDelta, yDelta, etc. set in getDiscrepPar.R script
@@ -99,7 +101,7 @@ contourShift <- function(maps, predicted, bcYear, predStartYear, regions, level,
   
   print("Adjusting regions...")
   ##adjust typical regions
-  yearInd <- maps$startYear:(bcYear - endYearOffset)
+  yearInd <- maps$startYear:(bcYear - endYearOffset) # This is the actual year (not index)
   end <- list()
   for (j in 1:nReg) {
     line <- regions$lines[[j]]@lines[[1]]@Lines[[1]]@coords
@@ -108,20 +110,30 @@ contourShift <- function(maps, predicted, bcYear, predStartYear, regions, level,
     for (s in 1:nrow(line)) {
       #calculate pattern in x-values and bias correct
       xTempObs <- maps$obsList[[j]][1:(discrepIndex - endYearOffset), s, 3]
-      lmXObs <- suppressWarnings(rlm(xTempObs ~ yearInd))
-      xObsPred <- predict(lmXObs, newdata = data.frame(yearInd = bcYear))
       xTempRaw <- maps$predList[[j]][1:(discrepIndex - endYearOffset), s, 3]
-      lmXRaw <- suppressWarnings(rlm(xTempRaw ~ yearInd))
-      xRawPred <- predict(lmXRaw, newdata = data.frame(yearInd = bcYear))
+      if (modType=='rlm') {
+        lmXObs <- suppressWarnings(rlm(xTempObs ~ yearInd))
+        xObsPred <- predict(lmXObs, newdata = data.frame(yearInd = bcYear))
+        lmXRaw <- suppressWarnings(rlm(xTempRaw ~ yearInd))
+        xRawPred <- predict(lmXRaw, newdata = data.frame(yearInd = bcYear))
+      } else if (modType=='mean') {
+        xObsPred = mean(xTempObs)
+        xRawPred = mean(xTempRaw)
+      }
       new[s, "x"] <- rawMap[[j]][s, "toX"] + (xObsPred - xRawPred)
 
       #calculate pattern in y-values and bias correct
       yTempObs <- maps$obsList[[j]][1:(discrepIndex - endYearOffset), s, 4]
-      lmYObs <- suppressWarnings(rlm(yTempObs ~ yearInd))
-      yObsPred <- predict(lmYObs, newdata = data.frame(yearInd = bcYear))
       yTempRaw <-  maps$predList[[j]][1:(discrepIndex - endYearOffset), s, 4]
-      lmYRaw <- suppressWarnings(rlm(yTempRaw ~ yearInd))
-      yRawPred <- predict(lmYRaw, newdata = data.frame(yearInd = bcYear))
+      if (modType=='rlm') {
+        lmYObs <- suppressWarnings(rlm(yTempObs ~ yearInd))
+        yObsPred <- predict(lmYObs, newdata = data.frame(yearInd = bcYear))
+        lmYRaw <- suppressWarnings(rlm(yTempRaw ~ yearInd))
+        yRawPred <- predict(lmYRaw, newdata = data.frame(yearInd = bcYear))
+      } else if (modType=='mean') {
+        yObsPred = mean(yTempObs)
+        yRawPred = mean(yTempRaw)
+      }
       new[s, "y"] <- rawMap[[j]][s, "toY"]  + (yObsPred - yRawPred)
     }
     end[[j]] <- new
@@ -163,17 +175,27 @@ contourShift <- function(maps, predicted, bcYear, predStartYear, regions, level,
     obsLength <- sqrt(xTempObs^2 + yTempObs^2)
     #use regression to get adjustment
     if (length(unique(rawLength)) > 1) {
-      lmRaw <- suppressWarnings(rlm(rawLength ~ yearInd))
-      rawPred <- predict(lmRaw, newdata = data.frame(yearInd = bcYear))
+      if (modType=='rlm') {
+        lmRaw <- suppressWarnings(rlm(rawLength ~ yearInd))
+        rawPred <- predict(lmRaw, newdata = data.frame(yearInd = bcYear))
+      } else if (modType=='mean') {
+        rawPred = mean(rawLength)
+      }
     } else {
       rawPred <- rawLength[1]
     }
+    
     if (length(unique(obsLength)) > 1) {
-      lmObs <- suppressWarnings(rlm(obsLength ~ yearInd))
-      obsPred <- predict(lmObs, newdata = data.frame(yearInd = bcYear))
+      if (modType=='rlm') {
+        lmObs <- suppressWarnings(rlm(obsLength ~ yearInd))
+        obsPred <- predict(lmObs, newdata = data.frame(yearInd = bcYear))
+      } else if (modType=='mean') {
+        obsPred = mean(obsLength)
+      }  
     } else {
       obsPred <- obsLength[1]
     }
+
     #calculate new length of mapping vectors
     xRaw <- rawCent[s, 3]
     yRaw <- rawCent[s, 4]

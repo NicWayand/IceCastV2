@@ -82,6 +82,7 @@ quickRun <- function(obsNCDF, predNCDF, predYears, startYear, endYearOffset=1, m
   } else {
     obsMat <- ncvar_get(obs, "iceInd")
   }
+
   obsStartYear <- obs$dim$year$vals[1]
   pred <- nc_open(predNCDF)
   predMat <- ncvar_get(pred, "iceInd")
